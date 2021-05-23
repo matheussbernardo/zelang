@@ -13,7 +13,6 @@ depends: [
   "dune" {>= "2.8.2"}
   "ocaml" {>= "4.11.0"}
   "core" {>= "v0.14.0"}
-  "sexp" {>= "v0.14.0"}
   "utop" {dev}
   "merlin" {dev}
   "ocamlformat" {dev}
