@@ -40,6 +40,14 @@ type exprC =
   | BinaryOpC of binaryOperator * exprC * exprC
   | UnaryOpC of unaryOperator * exprC
   | IfC of exprC * exprC * exprC
+  | IdC of string
+  | AppC of string * exprC
+
+type funDefC = FunDC of string * string * exprC
+
+type binding = Bind of string * value
+
+type environment = binding list
 
 type exprS =
   | TrueS
@@ -48,6 +56,8 @@ type exprS =
   | BinaryOpS of binaryOperator * exprS * exprS
   | UnaryOpS of unaryOperator * exprS
   | IfS of exprS * exprS * exprS
+  | IdS of string
+  | AppS of string * exprS
 
 let rec exprS_of_sexp s =
   match s with
@@ -55,12 +65,15 @@ let rec exprS_of_sexp s =
   | Atom "false" -> FalseS
   | Atom str when str |> int_of_string_opt |> is_some ->
       NumS (int_of_string str)
-  | Atom _ -> of_sexp_error "Unexpected atom" s
+  | Atom s -> IdS s
   | List [ Atom "if"; cond; t; e ] ->
       IfS (exprS_of_sexp cond, exprS_of_sexp t, exprS_of_sexp e)
   | List [ op; l; r ] ->
       BinaryOpS (binaryOperator_of_sexp op, exprS_of_sexp l, exprS_of_sexp r)
-  | List [ op; l ] -> UnaryOpS (unaryOperator_of_sexp op, exprS_of_sexp l)
+  | List [ op; l ] when equal op (Atom "not") || equal op (Atom "-")
+    ->
+      UnaryOpS (unaryOperator_of_sexp op, exprS_of_sexp l)
+  | List [ Atom str; tl ] -> AppS (str, exprS_of_sexp tl)
   | List _ -> of_sexp_error "Unexpected list of atoms" s
 
 let rec sexp_of_exprS t =
@@ -73,6 +86,8 @@ let rec sexp_of_exprS t =
   | UnaryOpS (op, l) -> List [ sexp_of_unaryOperator op; sexp_of_exprS l ]
   | IfS (cond, t, e) ->
       List [ Atom "if"; sexp_of_exprS cond; sexp_of_exprS t; sexp_of_exprS e ]
+  | IdS i -> Atom i
+  | AppS (str, expr) -> List [ Atom str; sexp_of_exprS expr ]
 
 let rec desugar s =
   match s with
@@ -87,47 +102,78 @@ let rec desugar s =
   | UnaryOpS (OpMinusU, l) -> BinaryOpC (OpMult, NumC (-1), desugar l)
   | UnaryOpS (op, l) -> UnaryOpC (op, desugar l)
   | IfS (cond, t, e) -> IfC (desugar cond, desugar t, desugar e)
+  | IdS str -> IdC str
+  | AppS (str, expr) -> AppC (str, desugar expr)
 
-let rec interp e =
+let rec interp e nv fds =
   match e with
   | TrueC -> BoolV true
   | FalseC -> BoolV false
   | NumC i -> NumV i
   | BinaryOpC (op, l, r) -> (
       match op with
-      | OpPlus -> arith_binop (fun x y -> x + y) l r
-      | OpMult -> arith_binop (fun x y -> x * y) l r
-      | OpNumEq -> arith_bool_binop (fun x y -> phys_equal x y) l r
+      | OpPlus -> arith_binop (fun x y -> x + y) l r nv fds
+      | OpMult -> arith_binop (fun x y -> x * y) l r nv fds
+      | OpNumEq -> arith_bool_binop (fun x y -> equal_int x y) l r nv fds
       | _ -> failwith "bug!")
   | UnaryOpC (op, expr) -> (
       match op with
-      | OpNotBool -> bool_unaop (fun x -> not x) expr
+      | OpNotBool -> bool_unaop (fun x -> not x) expr nv fds
       | _ -> failwith "bug!")
   | IfC (cond, t, e) -> (
-      match interp cond with
-      | BoolV true -> interp t
-      | BoolV false -> interp e
+      match interp cond nv fds with
+      | BoolV true -> interp t nv fds
+      | BoolV false -> interp e nv fds
       | _ -> failwith "argument is not a boolean")
+  | AppC (f, a) ->
+      let arg_v = interp a nv fds in
+      let (FunDC (_, arg, body)) = get_fundef f fds in
+      interp body (Bind (arg, arg_v) :: nv) fds
+  | IdC s -> lookup s nv
 
-and arith_binop op l r =
-  let leftV = interp l in
-  let rightV = interp r in
+and lookup s nv =
+  match nv with
+  | [] -> failwith "could not find a function"
+  | hd :: tl ->
+      let (Bind (str, value)) = hd in
+      if equal_string s str then value else lookup s tl
+
+and arith_binop op l r nv fds =
+  let leftV = interp l nv fds in
+  let rightV = interp r nv fds in
   match (leftV, rightV) with
   | NumV l, NumV r -> NumV (op l r)
   | _ -> failwith "argument is not a number"
 
-and arith_bool_binop op l r =
-  let leftV = interp l in
-  let rightV = interp r in
+and arith_bool_binop op l r nv fds =
+  let leftV = interp l nv fds in
+  let rightV = interp r nv fds in
   match (leftV, rightV) with
   | NumV l, NumV r -> BoolV (op l r)
   | _ -> failwith "argument is not a number"
 
-and bool_unaop op expr =
-  match interp expr with
+and bool_unaop op expr nv fds =
+  match interp expr nv fds with
   | BoolV b -> BoolV (op b)
   | _ -> failwith "argument is not a boolean"
 
+and get_fundef name fds =
+  match fds with
+  | [] -> failwith "could not find a function"
+  | hd :: tl ->
+      let (FunDC (n, _, _)) = hd in
+      if equal_string n name then hd else get_fundef name tl
+
+let f1 = FunDC ("double", "x", BinaryOpC (OpPlus, IdC "x", IdC "x"))
+
+let f2 = FunDC ("quad", "x", AppC ("double", AppC ("double", IdC "x")))
+
+let f3 = FunDC ("const5", "_", NumC 5)
+
+(* (def f4 (x) (if x 1 0))*)
+let funs = [ f1; f2; f3 ]
+
 let () =
-  In_channel.stdin |> input_sexp |> exprS_of_sexp |> desugar |> interp
-  |> sexp_of_value |> Out_channel.print_s
+  let desugared = In_channel.stdin |> input_sexp |> exprS_of_sexp |> desugar in
+  let interpreted = interp desugared [] funs in
+  interpreted |> sexp_of_value |> Out_channel.print_s
