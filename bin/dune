@@ -1,0 +1,6 @@
+(executable
+ (public_name zelang)
+ (name main)
+ (libraries zelang core)
+ (preprocess
+  (pps ppx_jane)))
