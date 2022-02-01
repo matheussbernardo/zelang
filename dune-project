@@ -32,9 +32,10 @@
    (>= 4.11.0))
   (core
    (>= v0.14.0))
+  (ppx_show
+   (>= 0.2.1))
   ;; Dev dependencies
   (utop :dev)
   (merlin :dev)
   (ocamlformat :dev)
-  (ocp-indent :dev)
-  ))
+  (ocp-indent :dev)))

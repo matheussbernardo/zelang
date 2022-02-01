@@ -2,6 +2,7 @@ open Core
 open Sexp
 
 type binaryOperator = OpPlus | OpMult | OpMinus | OpNumEq | OpAnd
+[@@deriving show]
 
 let binaryOperator_of_sexp s =
   match s with
@@ -19,5 +20,3 @@ let sexp_of_binaryOperator t =
   | OpMinus -> Atom "-"
   | OpNumEq -> Atom "=="
   | OpAnd -> Atom "and"
-
-

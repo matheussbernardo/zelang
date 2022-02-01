@@ -1,7 +1,8 @@
 open Core
 open Sexp
 
-type unaryOperator = OpNotBool | OpMinusU
+type unaryOperator = OpNotBool | OpMinusU [@@deriving show]
+
 let unaryOperator_of_sexp s =
   match s with
   | Atom "not" -> OpNotBool
