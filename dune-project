@@ -27,11 +27,11 @@
  (description "ZE LANG")
  (depends
   (dune
-   (>= 2.8.2))
+   (>= 3.9.0))
   (ocaml
-   (>= 4.11.0))
+   (>= 5.0.0))
   (core
-   (>= v0.14.0))
+   (>= v0.16.1))
   (ppx_show
    (>= 0.2.1))
   ;; Dev dependencies
